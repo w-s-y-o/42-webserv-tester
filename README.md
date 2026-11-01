@@ -1,5 +1,5 @@
-# Webserv Tester v5.2 — one-command testing for 42 Webserv
-
+# Webserv Tester v5.2
+#### If you failed, don't fix the tester, fix your code!
 An independent black-box HTTP tester for the **42 Webserv** project (subject v24.1). It covers static files, GET/POST/DELETE, configuration, HTTP parsing, CGI, uploads, chunked bodies, connection resilience, resource handling and stress. It is **not** the official school tester or an official grading rubric.
 
 **One menu choice = one run of the selected tests.** The former *Quick Mandatory* and *Quick Mandatory + Valgrind* menu choices were merged into **Mandatory Test**. Valgrind is automatically enabled on Linux when installed; it instruments **the same run**, not a duplicate run. If unavailable, the tester continues with file-descriptor, zombie-process and RSS monitoring. You can opt out of Valgrind for performance testing with `--no-valgrind`.
