@@ -150,6 +150,7 @@ MANDATORY, BONUS, EXTRA = "mandatory", "bonus", "extra"
 GROUP_ORDER = {MANDATORY: 0, BONUS: 1, EXTRA: 2}
 QUICK = False
 STATE = {}
+MEM_WARNINGS = []   # RSS trends are diagnostic; they do not by themselves prove leaks.
 TESTS = []                  # (group, section, name, fn, slow, mem)
 SECTIONS = []               # (group, title)
 CUR = {"group": MANDATORY, "section": "", "mem": "yes"}
@@ -2906,19 +2907,28 @@ def hunt(name, action, per_batch=1000, slow=False, needs=()):
             batch(n)
             last = mon.settle(s0, CONFIG["mem_settle"]) or last
             series.append(last["rss"])
-        probs = []
+        problems = []
         if s0["fds"] >= 0 and last["fds"] > s0["fds"] + CONFIG["mem_fd_tolerance"]:
-            probs.append("%d file descriptor(s) never closed (%d -> %d)" % (last["fds"] - s0["fds"], s0["fds"], last["fds"]))
+            problems.append("%d file descriptor(s) never closed (%d -> %d)" % (
+                last["fds"] - s0["fds"], s0["fds"], last["fds"]))
         if last["zombies"] > s0["zombies"]:
-            probs.append("%d zombie child process(es) not reaped" % (last["zombies"] - s0["zombies"]))
+            problems.append("%d zombie child process(es) not reaped" % (
+                last["zombies"] - s0["zombies"]))
         growth = series[-1] - series[0]
         rising = all(b > a for a, b in zip(series, series[1:]))
+        rss_warning = ""
         if growth > CONFIG["mem_rss_tolerance_kb"] and rising:
-            probs.append("memory rises after every batch: +%d KB in %d actions (about %d bytes each)" % (
-                growth, 3 * n, growth * 1024 // (3 * n)))
-        info = "%d actions: fds %d -> %d | RSS KB %s" % (3 * n, s0["fds"], last["fds"], " -> ".join(str(x) for x in series))
-        STATE["mem_override"] = (not probs, "descriptors, zombies and memory stay flat while the action repeats %d times" % (3 * n),
-                                 "; ".join(probs) + "  [" + info + "]" if probs else info)
+            rss_warning = "RSS rose every batch: +%d KB across %d actions (~%d B/action)" % (
+                growth, 3 * n, growth * 1024 // (3 * n))
+        info = "%d actions: fds %d -> %d | RSS KB %s" % (
+            3 * n, s0["fds"], last["fds"], " -> ".join(str(x) for x in series))
+        # RSS is retained physical memory, not an allocation-leak detector.
+        # Valgrind's final shutdown report is used to judge actual heap leaks.
+        verdict = "fail" if problems else ("warn" if rss_warning else "pass")
+        details = problems + ([rss_warning] if rss_warning else [])
+        STATE["mem_override"] = (verdict,
+            "no unreleased fds or zombie processes; review repeated RSS growth separately",
+            "; ".join(details) + "  [" + info + "]" if details else info)
         ok = cnt["bad"] <= max(2, 0.02 * cnt["total"])
         return ok, "the action succeeds every time", "%d of %d actions failed" % (cnt["bad"], cnt["total"])
     add(name, fn, slow)
@@ -3268,6 +3278,7 @@ EXTRA_MAP = [
         "An error answer (404) does not break the connection for the next request",
         "HTTP/1.0 request without keep-alive: server closes after the answer",
         "50 connections x 40 keep-alive requests each",
+        "Leak hunt: keep-alive connections (20 requests each)",
     ]),
     ("Extended client compatibility", [
         "Expect: 100-continue does not hang (100 Continue or wait, then final answer)",
@@ -3339,7 +3350,8 @@ def mem_verdict(mem, before):
     """-> (state, expected, got), state is 'pass', 'fail' or 'na'."""
     ov = STATE.pop("mem_override", None)
     if ov is not None:
-        return ("pass" if ov[0] else "fail"), ov[1], ov[2]
+        state = ov[0] if isinstance(ov[0], str) else ("pass" if ov[0] else "fail")
+        return state, ov[1], ov[2]
     if not CONFIG["memory_check"]:
         return "na", "", "disabled with --no-memory"
     if MON is None:
@@ -3383,11 +3395,16 @@ def print_mem(state, exp, got):
         print("Memory problem:")
         wrap("  Expected :", exp)
         wrap("  Got      :", got)
+    elif state == "warn":
+        print("Memory Leak : " + c("WATCH (RSS trend; not confirmed leak)", YELLOW))
+        wrap("  Observed :", got)
+        print("  Check native RSS and the final Valgrind heap report.")
     else:
         print("Memory Leak : " + c("N/A", YELLOW) + " (%s)" % got)
 
 
 def run(groups, only=None):
+    del MEM_WARNINGS[:]
     selected = [t for t in TESTS if t[0] in groups and (not only or only.lower() in t[1].lower())]
     stats = {}
     for g, title in SECTIONS:
@@ -3455,10 +3472,12 @@ def run(groups, only=None):
                     "was confirmed; continuing with later cases.", YELLOW))
         m_state, m_exp, m_got = mem_verdict(mem, before)
         print_mem(m_state, m_exp, m_got)
-        if m_state in ("pass", "fail"):
+        if m_state in ("pass", "fail", "warn"):
             st[4] += 1
-            if m_state == "pass":
-                st[3] += 1
+            if m_state in ("pass", "warn"):
+                st[3] += 1  # RSS warnings are not confirmed heap leaks.
+            if m_state == "warn":
+                MEM_WARNINGS.append((name, m_got))
         if VALGRIND_ACTIVE:
             if mem == "no":
                 print("Valgrind    : %s (separate startup process; not instrumented)" % c("N/A", YELLOW))
@@ -3473,7 +3492,7 @@ def run(groups, only=None):
                     print("  " + issue)
                 if issues:
                     # Per-case Valgrind errors contribute to the memory result.
-                    if m_state == "pass":
+                    if m_state in ("pass", "warn"):
                         st[3] -= 1
                     elif m_state == "na":
                         st[4] += 1
@@ -3508,7 +3527,10 @@ def final_report(stats, groups, valgrind_result=None):
     if mc:
         print(c("Memory Leak Result: %d out of %d" % (mp, mc), GREEN if mp == mc else RED))
         if MON is not None:
-            print("  (process-level FD/zombie/RSS checks; these are not exact heap-leak measurements)")
+            print("  (FD/zombie checks; RSS trends reported separately, not proof of a leak)")
+    if MEM_WARNINGS:
+        print(c("RSS trend warnings: %d (not counted as confirmed memory leaks)" % len(MEM_WARNINGS), YELLOW))
+        print("  Recheck the same section with --no-valgrind and inspect final Memcheck results.")
     else:
         print("Memory Leak Result: not measured (server PID unknown or --no-memory)")
     if valgrind_result is not None:

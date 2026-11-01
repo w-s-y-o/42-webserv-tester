@@ -1,4 +1,4 @@
-# Webserv Tester v5.1 — one-command testing for 42 Webserv
+# Webserv Tester v5.2 — one-command testing for 42 Webserv
 
 An independent black-box HTTP tester for the **42 Webserv** project (subject v24.1). It covers static files, GET/POST/DELETE, configuration, HTTP parsing, CGI, uploads, chunked bodies, connection resilience, resource handling and stress. It is **not** the official school tester or an official grading rubric.
 
@@ -169,7 +169,7 @@ External Valgrind logs remain supported via `--external --valgrind-log 'path/glo
 ./webserv_tester/run.sh --list
 ```
 
-The counts in v5 are **236 mandatory-labelled, 19 bonus, 39 extra** (294 total). `SKIP` is not counted as a failure. Some expectations follow widely used HTTP conventions, not explicit 42 subject text; use the *Expected/Got* diagnostic to decide whether a failure represents a real mandatory issue.
+The counts in v5.2 are **235 mandatory-labelled, 19 bonus, 40 extra** (294 total). `SKIP` is not counted as a failure. Some expectations follow widely used HTTP conventions, not explicit 42 subject text; use the *Expected/Got* diagnostic to decide whether a failure represents a real mandatory issue.
 
 **Mandatory-labelled** focuses on configuration and ports, serving static files, GET/POST/DELETE, limits and chunked decoding, directory/index/redirect, parsing and security, CGI, partial packets, non-blocking I/O, connection resilience, timeouts and process resources.
 
@@ -196,6 +196,20 @@ The counts in v5 are **236 mandatory-labelled, 19 bonus, 39 extra** (294 total).
 | `--leaks` | macOS: enable the `leaks` tool, if installed |
 | `--valgrind-log GLOB --stop-server` | Read external Valgrind output and explicitly stop that server |
 
+## Understanding memory-hunt results
+
+The repeated-action tests monitor **open file descriptors**, **zombie CGI children**, and **RSS** (resident memory). Unclosed descriptors and unreaped zombies remain failures. A monotonically rising RSS trace above the configured threshold is displayed as **WATCH**, not a proven heap leak: C++ allocators and Valgrind can retain pages even after memory has been freed. The RSS trace and the number of requests remain visible for diagnosis. WATCH cases count as resource checks completed without a confirmed FD/zombie failure; they are tallied separately in the final summary, **not silently treated as leak-free**.
+
+On Linux, the authoritative heap-leak indicator in this package is the **final Valgrind Memcheck report at clean server exit** (`definitely lost`, `indirectly lost`, `possibly lost`, and `ERROR SUMMARY`). `Valgrind: PASS` *beside a test* only means no new runtime errors were observed during that test; it does not certify zero heap leaks for that specific request. Check the final summary and the raw Valgrind log. `still reachable` allocations or growing RSS can require separate investigation even when they are not classified as definite heap leaks.
+
+To compare native RSS (without instrumentation), run:
+
+```sh
+./webserv_tester/run.sh --choice 1 --section "Memory leaks" --no-valgrind
+```
+
+The keep-alive memory hunt is now in **Extra**, alongside the other optional persistent-connection tests. A Webserv implementation that closes each HTTP response should not fail the mandatory-labelled suite solely for lacking keep-alive.
+
 ## Troubleshooting and limitations
 
 - **Cannot find executable:** build with `make`, or provide the path as the first argument to `run.sh`.
@@ -219,3 +233,9 @@ This is a black-box suite. It cannot prove a single `poll()` use, C++98 complian
 - An unresponsive server is **not** automatically declared crashed. The tester attempts to confirm process exit, continues testing if a process exit is not confirmed, and marks cases genuinely not executed after an exit as `SKIP` instead of inventing failed results.
 - Valgrind adds substantial execution overhead; when investigating **timing-related** failures, use `./webserv_tester/run.sh --choice 1 --section "Checking sockets non-blocking" --no-valgrind`. This does not replace the separate whole-run memory check.
 - Save a unique log for every run: `./webserv_tester/run.sh --choice 1 --no-valgrind 2>&1 | tee "tester_$(date +%Y%m%d_%H%M%S).log"`.
+
+## v5.2 adjustments
+
+- Moved `Leak hunt: keep-alive connections (20 requests each)` from Mandatory to Extra.
+- RSS growth is printed as **WATCH**, with all four batch measurements retained. It is not automatically classified as a heap leak. FD and zombie leaks still fail. The report counts RSS-watch cases separately, while Valgrind runtime errors and final heap-leak findings still fail.
+- For a comparable native-memory diagnosis, rerun only the memory section using `--no-valgrind`; the automatic Valgrind mode stays available for heap validation.
