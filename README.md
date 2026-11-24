@@ -1,5 +1,5 @@
-# Webserv Tester v5.2
-#### If you failed, don't fix the tester, fix your code!
+# Webserv Tester v5.2 — one-command testing for 42 Webserv
+
 An independent black-box HTTP tester for the **42 Webserv** project (subject v24.1). It covers static files, GET/POST/DELETE, configuration, HTTP parsing, CGI, uploads, chunked bodies, connection resilience, resource handling and stress. It is **not** the official school tester or an official grading rubric.
 
 **One menu choice = one run of the selected tests.** The former *Quick Mandatory* and *Quick Mandatory + Valgrind* menu choices were merged into **Mandatory Test**. Valgrind is automatically enabled on Linux when installed; it instruments **the same run**, not a duplicate run. If unavailable, the tester continues with file-descriptor, zombie-process and RSS monitoring. You can opt out of Valgrind for performance testing with `--no-valgrind`.
@@ -239,3 +239,8 @@ This is a black-box suite. It cannot prove a single `poll()` use, C++98 complian
 - Moved `Leak hunt: keep-alive connections (20 requests each)` from Mandatory to Extra.
 - RSS growth is printed as **WATCH**, with all four batch measurements retained. It is not automatically classified as a heap leak. FD and zombie leaks still fail. The report counts RSS-watch cases separately, while Valgrind runtime errors and final heap-leak findings still fail.
 - For a comparable native-memory diagnosis, rerun only the memory section using `--no-valgrind`; the automatic Valgrind mode stays available for heap validation.
+
+
+## Bonus CGI types fixture (v5.3)
+
+The auto-generated test config now registers both `.py` (Python) and `.sh` (`/bin/sh`) CGI interpreters. The fixture includes both `hello.py` and `hello.sh`, and the generated tester JSON includes both in `cgi_types`. This fixes a false failure where only Python was configured for a test requiring two CGI types. Both scripts should return HTTP 200 and their expected markers. If using a custom external configuration, configure your own CGI types and list both in `cgi_types`.

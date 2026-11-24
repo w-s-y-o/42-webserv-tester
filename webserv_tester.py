@@ -124,7 +124,8 @@ CONFIG = {
 
     "cgi_base": None,                  # route of the sample scripts, e.g. "/cgi-bin"
     "cgi_big_body": 200000,            # POST size sent to the CGI (pipe deadlock test)
-    "cgi_types": [["hello.py", "Hello from CGI (python)"]],  # extra CGI types need configuration
+    "cgi_types": [["hello.py", "Hello from CGI (python)"],
+                      ["hello.sh", "Hello from CGI (sh)"]],  # extra CGI types need configuration
 
     "custom_tests": [],                # [["GET", "/my/route", 200, "expected text"], ...]
 
@@ -3656,7 +3657,8 @@ def gen_samples(dest):
         "index_contains": "webserv sample index",
         "custom_404_contains": "TESTER CUSTOM 404",
         "extra_port_expect": {"8081": "Second Port OK"},
-        "cgi_types": [["hello.py", "Hello from CGI (python)"]],
+        "cgi_types": [["hello.py", "Hello from CGI (python)"],
+                      ["hello.sh", "Hello from CGI (sh)"]],
         "upload_path": "/upload",
         "upload_fetch_prefix": "/uploads/",
         "delete_prefix": "/uploads/",
@@ -3744,7 +3746,8 @@ def make_test_setup(dest=None, binary=None, port=8080, port2=None):
         "max_body_path": "/limited", "max_body_size": 1000,
         "autoindex_on_path": "/listing/", "autoindex_off_path": "/empty/",
         "redirect_path": "/redirect", "redirect_location": "/index.html",
-        "cgi_base": "/cgi-bin", "cgi_types": [["hello.py", "Hello from CGI (python)"]],
+        "cgi_base": "/cgi-bin", "cgi_types": [["hello.py", "Hello from CGI (python)"],
+                      ["hello.sh", "Hello from CGI (sh)"]],
         "cgi_big_body": 200000,
     })
     jpath = os.path.join(dest, "tester_config.json")

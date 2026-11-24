@@ -30,6 +30,7 @@ server {
         methods GET POST;
         root {{SITE}}/www/cgi-bin;
         cgi .py {{PYTHON}};
+        cgi .sh /bin/sh;
     }
     location /post_body {
         methods POST;
